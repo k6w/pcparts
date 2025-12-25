@@ -44,6 +44,9 @@ std::string VariantToString(VARIANT var) {
     return "Unknown";
 }
 
+// Forward declaration for VariantToULL (defined later)
+unsigned long long VariantToULL(VARIANT var);
+
 // Function to initialize COM and WMI
 HRESULT InitializeWMI(IWbemServices** pSvc) {
     HRESULT hres;
@@ -215,9 +218,9 @@ void GetRAMInfo(IWbemServices* pSvc) {
         hr = pclsObj->Get(L"Capacity", 0, &vtProp, 0, 0);
         unsigned long long capacity = 0;
         if (SUCCEEDED(hr)) {
-            capacity = vtProp.ullVal;
+            capacity = VariantToULL(vtProp);
             totalCapacity += capacity;
-            std::cout << "Module Capacity: " << (capacity / (1024 * 1024 * 1024)) << " GB" << std::endl;
+            std::cout << "Module Capacity: " << (capacity / (1024ULL * 1024ULL * 1024ULL)) << " GB" << std::endl;
             VariantClear(&vtProp);
         }
 
@@ -278,8 +281,8 @@ void GetGPUInfo(IWbemServices* pSvc) {
 
         hr = pclsObj->Get(L"AdapterRAM", 0, &vtProp, 0, 0);
         if (SUCCEEDED(hr)) {
-            unsigned long long ram = vtProp.ullVal;
-            std::cout << "Memory: " << (ram / (1024 * 1024 * 1024)) << " GB" << std::endl;
+            unsigned long long ram = VariantToULL(vtProp);
+            std::cout << "Memory: " << (ram / (1024ULL * 1024ULL * 1024ULL)) << " GB" << std::endl;
             VariantClear(&vtProp);
         }
 
@@ -341,14 +344,15 @@ void GetStorageInfo(IWbemServices* pSvc) {
         hr = pclsObj->Get(L"TotalSectors", 0, &vtProp, 0, 0);
         unsigned long long totalSectors = 0;
         if (SUCCEEDED(hr)) {
-            totalSectors = vtProp.ullVal;
+            totalSectors = VariantToULL(vtProp);
             VariantClear(&vtProp);
         }
 
         hr = pclsObj->Get(L"BytesPerSector", 0, &vtProp, 0, 0);
         unsigned long bytesPerSector = 512; // default
         if (SUCCEEDED(hr)) {
-            bytesPerSector = vtProp.ulVal;
+            bytesPerSector = static_cast<unsigned long>(VariantToULL(vtProp));
+            if (bytesPerSector == 0) bytesPerSector = 512;
             VariantClear(&vtProp);
         }
 
@@ -440,4 +444,24 @@ int main() {
     std::cout << "Press Enter to exit...";
     std::cin.get();
     return 0;
+}
+
+// Convert VARIANT to unsigned long long safely
+unsigned long long VariantToULL(VARIANT var) {
+    if (var.vt == VT_UI8) return var.ullVal;
+    if (var.vt == VT_I8) return static_cast<unsigned long long>(var.llVal);
+    if (var.vt == VT_UI4) return var.ulVal;
+    if (var.vt == VT_I4) return static_cast<unsigned long long>(var.lVal);
+    if (var.vt == VT_R8) return static_cast<unsigned long long>(var.dblVal);
+    if (var.vt == VT_R4) return static_cast<unsigned long long>(var.fltVal);
+    if (var.vt == VT_BSTR && var.bstrVal) {
+        try {
+            std::string s = trim(BSTRToString(var.bstrVal));
+            if (s.empty()) return 0ULL;
+            return std::stoull(s);
+        } catch (...) {
+            return 0ULL;
+        }
+    }
+    return 0ULL;
 }
